@@ -23,7 +23,7 @@ for i=1:6
     m=m+numtracks(i);
 end
 
-for i=84:numfiles
+for i=1:numfiles
     fname = ['stimuli/' files(i).name];
     %a = miraudio(fname, 'Frame',8192,'sp', 4410,'sp');
     % Spectral centroid
@@ -41,10 +41,21 @@ for i=84:numfiles
     % store
     session = trackidx(i,1);
     track = trackidx(i,2);
-    features(session,track).centroid = mirgetdata(c);
-    features(session,track).env = mirgetdata(e);
-    features(session,track).pulseclar = mirgetdata(p);
-    features(session,track).mode = mirgetdata(m);
-    features(session,track).keyclar = mirgetdata(kc);
+    features{session}(track).centroid = mirgetdata(c);
+    features{session}(track).env = mirgetdata(e);
+    features{session}(track).pulseclar = mirgetdata(p);
+    features{session}(track).mode = mirgetdata(m);
+    features{session}(track).keyclar = mirgetdata(kc);
+    
+%     for i=1:numfiles
+%         session = trackidx(i,1);
+%         track = trackidx(i,2);
+%         features{session}(track).centroid = features1(session,track).centroid;
+%         features{session}(track).env = features1(session,track).env';
+%         features{session}(track).pulseclar = features1(session,track).pulseclar;
+%         features{session}(track).mode = features1(session,track).mode;
+%         features{session}(track).keyclar = features1(session,track).keyclar;
+%     end
 end
 save('audiofeatures.mat','features')
+load('audiofeatures.mat')

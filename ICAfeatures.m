@@ -20,8 +20,12 @@ disp('Beginning stability analysis...')
 stable_comps = zeros(64,6); % indicies of stable components
 rdv = ones(64,6); % Residual dipole variance
 % 
-load('stabilityresults.mat')
-for i=3:3
+%load('stabilityresults.mat')
+for i=1:6
+    % Load EEGLAB datasets, ICA and dipole fitting must have been performed
+    EEG{i} = pop_loadset('filename',[sessions{i},'_filt+resamp200+music+ICA.set'],'filepath','/Users/jthompson/data/EEG-Thesis/');
+end
+for i=1:6
     disp(sprintf('session %d',i))
     % Load EEGLAB datasets, ICA and dipole fitting must have been performed
     EEG{i} = pop_loadset('filename',[sessions{i},'_filt+resamp200+music+ICA.set'],'filepath','/Users/jthompson/data/EEG-Thesis/');
@@ -30,7 +34,7 @@ for i=3:3
     % (use FastICA parameters: kurtosis as non-linearity,
     % symmetric estimation approach
     sR{i}=icassoEst('both', EEG{i}.data, 30, 'lastEig', 64, 'g', 'pow3', ...
-                 'approach', 'symm','maxNumIterations', 200); %perform ICA 30 times
+                 'approach', 'symm','maxNumIterations', 150); %perform ICA 30 times
     sR{i} = icassoCluster(sR{i}); %cluster
     [Iq{i},in_avg{i},ext_avg{i},in_min{i},ext_max{i}]=icassoStability(sR{i},64); % calculate stability index
 
@@ -52,12 +56,12 @@ for k=1:6
     accepted_spatial_maps(m:m+numcomps-1,:) = EEG{k}.icawinv(:,accepted_comps(:,k))';
     m=m+numcomps;
 end
-save('stabilityresults.mat','accepted_comps', 'accepted_spatial_maps')
+save('stabilityresults.mat','accepted_comps', 'accepted_spatial_maps', 'sR')
 remaining = sum(accepted_comps(:));
 rejected = (64*4)-remaining;
 disp(sprintf('%d components remain. (%d rejected by stability and dipolarity analysis.)', remaining, rejected))
 % OR
-load('stabilityresults.mat')
+%load('stabilityresults.mat')
 
 %% cluster spatial maps of accepted components
 %[CENTRES, OPTIONS, POST, ERRLOG] = kmeans(CENTRES, DATA);
@@ -89,13 +93,13 @@ save('acceptedclusters.mat','clusters', 'accepted_clusters')
 numclusters = length(accepted_clusters);
 disp(sprintf('%d out of %d clusters accepted.',numclusters, maxclust));
 % OR
-load('acceptedclusters.mat')
+%load('acceptedclusters.mat')
 %% extract component oscilation bands
 % get start and stop latencies, need to look at type to not include
 % boundary events
 disp('Beginning time frequency analysis of accepted cluster components...')
 for i=1:6
-    EEG{i} = pop_loadset('filename',[sessions{i},'_filt+resamp200+music+ICA.set'],'filepath','/Users/jthompson/data/EEG-Thesis/');%load EEG data
+    %EEG{i} = pop_loadset('filename',[sessions{i},'_filt+resamp200+music+ICA.set'],'filepath','/Users/jthompson/data/EEG-Thesis/');%load EEG data
     start{i}= [];
     stop{i} = [];
     for j=1:size(EEG{i}.event, 2)
@@ -133,7 +137,7 @@ for i=1:length(accepted_clusters) %for each cluster
             alphaidx1=find(diff(F>8));
             alphaidx2=find(diff(F>12))+1;
             betaidx1=find(diff(F>12));
-            betaidx2=find(diff(F>30))+1;
+            betaidx2=find(diff(F>30))+1; 
             theta = mean(P(thetaidx1:thetaidx2,:),1);
             alpha = mean(P(alphaidx1:alphaidx2,:),1);
             beta = mean(P(betaidx1:betaidx2,:),1);
@@ -146,36 +150,137 @@ for i=1:length(accepted_clusters) %for each cluster
         end
     end
 end
-save('alloscillations.mat','oscillations')
-%load('alloscillations.mat')
+save('alloscillations.mat','oscillations','start','stop')
+load('alloscillations.mat')
+
 %% Correlation Analysis
-%Correlated with 5 audiofeatures from Cong paper, extracted with
+% Correlate 45s of the three eeg freq bands from each session with 5 audiofeatures from Cong paper, extracted with
 % MIRToolobox
+%load('audiofeatures.mat')
+numtracks=[83,10,8,9,12,14];
+featuresrate=10;
+%
 
+len = (30*featuresrate); %30 seconds
+for session=1:6 % for each session
+    track = random('unid',numtracks(session)); % choose a random track
+    tracklen = length(features{session}(track).centroid);
+    %tracklen = (stop{session}(track)-start{session}(track));
+    while tracklen<len%length of track less than 30 seconds
+        track = random('unid',numtracks(session));
+        tracklen = length(features{session}(track).centroid);
+    end
+    start = random('unid',int32(tracklen-len));% randomly select starting point 45 seconds or
+    stop = start+len;
+    feature_selection_set_idx{session} = [track,start,stop];
+end
 
+% end
+for i=1:length(accepted_clusters)%for each cluster
+    %for each component
+    clustidx = accepted_clusters(i);
+    numcomps(i) = size(clusters{clustidx},1);
+    %corrcoefs{i} = zeros(numcomps,3,5);
+    for j=1:numcomps(i)
+       session = clusters{clustidx}(j,1);
+       comp = clusters{clustidx}(j,2);
+       trck = feature_selection_set_idx{session}(1);
+       strt = feature_selection_set_idx{session}(2);
+       stp = feature_selection_set_idx{session}(3);
+       a = oscillations{i}{j}{trck}.alpha(strt:stp);
+       b = oscillations{i}{j}{trck}.beta(strt:stp);
+       t = oscillations{i}{j}{trck}.theta(strt:stp);
+       osc = {a, b, t};
+       c = features{session}(trck).centroid(strt:stp);
+       e = features{session}(trck).envresamp(strt:stp);
+       p = features{session}(trck).pulseclar(strt:stp);
+       m = features{session}(trck).mode(strt:stp);
+       k = features{session}(trck).keyclar(strt:stp);
+       audio = {c,e,p,m,k};
+       for audiofeat=1:5
+           for eegosc=1:3
+               [R,P] = corrcoef(osc{eegosc}',audio{audiofeat}');
+               corrcoefs{i}(j,audiofeat,eegosc,:)= [R(1,2),P(1,2)];
+           end
+       end
+    end
+end
+% accept only clusters where half of components are significantly
+% correlated with at least one of the musical audio features
+for i=1:length(accepted_clusters)
+    if sum(sum(sum(sum(corrcoefs{i}(:,:,:,2)<.05,4),3),2)>0) > numcomps(i)/2
+        disp(sprintf('cluster %s accepted!'),accepted_clusters(i))
+    else
+        accepted_clusters(i) = [];
+    end
+end
 
+%% Calcuate average spatial maps
 
-%load EEGLAB datasets
-% 
-% %% Estimate residual dipole variance 
-% % uses EEGLAB dataset structure
-% 
-% %   .A (cell array of matrices) 
-% %     contains mixing matrices from each estimation cycle
-% %
-% %   .W (cell array of matrices) 
-% %     contains demixing matrices from each estimation cycle
-% % I'm guessing channels x components
-% EEG.icawinv    = sR{1,1}.W{1,1};
-% EEG.icaweights = sR{1,1}.A{1,1};
-% 
-% pop_dipfit_settings()
-% % you can include custom MR image if in MNI space
-% 
-% % ?topo? is the topography of one ICA component. ?dipole? contains the
-% % residual dipole variance (RDV)
-% [ dipole model TMPEEG] = dipfit_erpeeg(sR{1,1}.A{1,1}(:,1), EEG.chanlocs, 'settings', EEG.dipfit, 'threshold', 100);
-% 
-% 
-% EEG = eeg_multifit(EEG);
+for clust=1:length(accepted_clusters)
+    num_comps = length(clusters{accepted_clusters(clust)});
+    spatial_maps_2avg{clust} = zeros(num_comps,64);
+    m=1;
+    for session=1:6
+       compindx = find(clusters{accepted_clusters(clust)}(:,1)==session);
+       comps = clusters{accepted_clusters(clust)}(compindx,2);
+       spatial_maps_2avg{clust}(m:m+length(comps)-1,:) = EEG{session}.icawinv(:,comps)'; %(channel x components)
+       m=m+length(comps);
+    end
+    spatialmap(clust,:) = mean(spatial_maps_2avg{clust},1);
+end
+save('spatialmaps.mat','spatialmap')
+
+%% calculate frequency band activity and save as final features
+featvecspertrack = zeros(136,1);
+trackidx = 0;
+for session=1:6
+    clear theta alpha beta
+    for clust=1:2
+        eegfeatsig{session}(clust,:) = spatialmap(clust,:)*EEG{session}.data;
+        m=1;
+        for k=1:length(start{session}) % for each track
+            
+            [S,F,T,P] = spectrogram(double(eegfeatsig{session}(clust,int32(start{session}(k)):int32(stop{session}(k)))),40,20,256,200);
+            featlen=length(T);
+            if clust==1
+                trackidx = trackidx+1;
+                featvecspertrack(trackidx) = featlen;
+            end
+            thetaidx1=find(diff(F>4));
+            thetaidx2=find(diff(F>7))+1;
+            alphaidx1=find(diff(F>8));
+            alphaidx2=find(diff(F>12))+1;
+            betaidx1=find(diff(F>12));
+            betaidx2=find(diff(F>30))+1;
+            theta(clust,m:m+featlen-1) = mean(P(thetaidx1:thetaidx2,:),1);
+            alpha(clust,m:m+featlen-1) = mean(P(alphaidx1:alphaidx2,:),1);
+            beta(clust,m:m+featlen-1) = mean(P(betaidx1:betaidx2,:),1);
+            m=m+featlen;
+        end
+    end
+    eegfeatures{session} = [theta' alpha' beta'];
+end
+save('eegfeatures.mat','eegfeatures')
+csvwrite('featvecspertrack.csv',featvecspertrack)
+feats2save = [];
+for i=1:6
+    feats2save = cat(1,feats2save, eegfeatures{i});
+end
+csvwrite('eegfeatures.csv',feats2save)
+
+% resample env feature to be same length as everything else
+% for i=1:6
+%     for j=1:numtracks(i)
+%         features{i}(j).envresamp = resample(features{i}(j).env, length(features{i}(j).centroid),length(features{i}(j).env));
+%     end
+% end
+
+% Plot accepted averaged spatial maps
+subplot(121)
+topoplot(spatialmap(1,:), EEG{1}.chanlocs);
+title('Cluster 1','FontSize',18)
+subplot(122)
+topoplot(spatialmap(2,:), EEG{1}.chanlocs);
+title('Cluster 2','FontSize',18)
 
